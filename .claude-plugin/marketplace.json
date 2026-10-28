@@ -3,12 +3,12 @@
   "owner": {
     "name": "Tyler Worley"
   },
-  "description": "Navattic demo capture for Claude Code.",
+  "description": "Turn written steps or a screen recording into a Navattic interactive demo. Claude drives the browser and takes every capture.",
   "plugins": [
     {
       "name": "navattic-capture",
       "source": "./plugins/navattic-capture",
-      "description": "Capture Navattic demos from written steps or a screen recording."
+      "description": "Turn written steps or a screen recording into a Navattic interactive demo. Claude drives the browser and takes every capture."
     }
   ]
 }

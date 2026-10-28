@@ -1,6 +1,6 @@
 {
   "name": "navattic-capture",
-  "description": "Capture Navattic interactive demos of a web app by describing the steps (or handing over a screen recording).",
+  "description": "Turn written steps or a screen recording into a Navattic interactive demo. Claude drives the browser and takes every capture.",
   "author": {
     "name": "Tyler Worley"
   }

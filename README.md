@@ -2,9 +2,9 @@
 
 # navattic-capture
 
-**Describe a click-through in plain English, or hand over a screen recording, and get a Navattic interactive demo.**
+**Describe a click path in plain English, or hand over a screen recording, and get the Navattic captures for it.**
 
-A Claude Code plugin that drives a real browser with the Navattic extension and takes one Navattic capture per step.
+A Claude Code plugin that drives a real browser with the Navattic extension and takes one capture per step. You build the demo from those captures in Navattic, as usual.
 
 ![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)
 ![Node](https://img.shields.io/badge/node-%E2%89%A522.15-339933?logo=node.js&logoColor=white)
@@ -33,7 +33,7 @@ A Claude Code plugin that drives a real browser with the Navattic extension and 
 
 ## Why
 
-Capturing a Navattic demo by hand means Shift+clicking through every screen, and starting over after each slip. This plugin does the clicking for you:
+Taking Navattic captures by hand means Shift+clicking through every screen, and starting over after each slip. This plugin does the clicking for you:
 
 - **Prompt-driven.** Every choice goes in the prompt: a new or existing demo, whether to build it at the end, and which Copilot content to generate. Nothing needs editing between runs.
 - **Fast.** A small decision model finds each element on the page, so Claude doesn't read the whole page at every step.

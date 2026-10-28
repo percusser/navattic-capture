@@ -1,6 +1,6 @@
 {
   "name": "navattic-capture",
-  "description": "Turn written steps or a screen recording into a Navattic interactive demo. Claude drives the browser and takes every capture.",
+  "description": "Automates Navattic's capture extension. Describe a click path, or hand over a screen recording, and Claude takes the captures, ready to build into a demo in Navattic.",
   "author": {
     "name": "Tyler Worley"
   }

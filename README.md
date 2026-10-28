@@ -2,9 +2,9 @@
 
 # navattic-capture
 
-**Describe a click path in plain English, or hand over a screen recording, and get the Navattic captures for it.**
+**Fast Navattic captures from plain-English steps or a screen recording.**
 
-A Claude Code plugin that drives a real browser with the Navattic extension and takes one capture per step. You build the demo from those captures in Navattic, as usual.
+A Claude Code plugin that drives a real browser with the Navattic extension and takes one capture per step. A small decision model picks each element, so Claude never reads the page: about 3× faster than Claude picking elements itself. You build the demo from the captures in Navattic, as usual.
 
 ![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)
 ![Node](https://img.shields.io/badge/node-%E2%89%A522.15-339933?logo=node.js&logoColor=white)
@@ -19,6 +19,7 @@ A Claude Code plugin that drives a real browser with the Navattic extension and 
 ## Contents
 
 - [Why](#why)
+- [Speed](#speed)
 - [How it works](#how-it-works)
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
@@ -36,9 +37,39 @@ A Claude Code plugin that drives a real browser with the Navattic extension and 
 Taking Navattic captures by hand means Shift+clicking through every screen, and starting over after each slip. This plugin does the clicking for you:
 
 - **Prompt-driven.** Every choice goes in the prompt: a new or existing demo, whether to build it at the end, and which Copilot content to generate. Nothing needs editing between runs.
-- **Fast.** A small decision model finds each element on the page, so Claude doesn't read the whole page at every step.
+- **Fast.** A small decision model finds each element on the page, so Claude doesn't read the whole page at every step. See [Speed](#speed).
 - **Recordings in.** Record the flow once with Cmd+Shift+5. Gemini (or Claude) turns the recording into written steps, and the plugin runs them.
 - **Clean captures.** Each field is captured while it's still empty, then typed into, so the demo shows the empty field before the typed text. A "Saved" toast is still on screen when the last capture is taken.
+
+## Speed
+
+All runs below used the same 6-step flow (avatar → Admin Dashboard → a settings page → check "Videos" → Save), on the same app, with Claude Haiku and 7 captures. Measured from Claude Code transcripts, 2026-10-28.
+
+| Who picks each element | Driver | Time | Tool calls | Page snapshots read |
+| --- | --- | --- | --- | --- |
+| Claude, reading page snapshots | MCP tools | 1:58 – 3:16 (median **2:27**, 4 runs) | 43–62 | 9–13 |
+| OpenRouter pplx-decider | MCP tools | 1:19 | 40 | 6 |
+| OpenRouter pplx-decider | `jev.mjs`, one call per step | 1:11 | 11 | 0 |
+| **TypeSafe Jev** | **`jev.mjs`, steps chained (what ships)** | **0:45** | **5** | **0** |
+
+Where the time goes:
+
+- **Without a decision model,** Claude reads a 50–90 KB page snapshot to find each element. Each read costs a model turn and thousands of tokens.
+- **With one,** the decision model answers "which element is the avatar button in the top right?" directly. `jev.mjs` then clicks it in the same call, and consecutive steps run as a single command.
+
+> [!NOTE]
+> The decision-model runs also used newer tooling, so the gap combines the two. The runs where Claude picked elements came before `jev.mjs` existed.
+
+On a longer 12-step flow (create a course: typing, a dropdown, a checkbox, 15 captures), the decision-model backends compared like this:
+
+| Backend | Time | Notes |
+| --- | --- | --- |
+| TypeSafe Jev | 1:13 | Every locate passed |
+| OpenRouter liquid/d1.1 | 1:14 | One stale element, retried |
+| OpenRouter liquid/d1-ultra | 1:24 | One unnamed field fell back to `find` |
+| Cloudflare clef-flash | 3:01 | Low confidence scores; 3 fallbacks |
+
+Recommendation: `DECIDER=typesafe` (Jev).
 
 ## How it works
 

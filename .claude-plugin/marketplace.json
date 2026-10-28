@@ -3,12 +3,12 @@
   "owner": {
     "name": "Tyler Worley"
   },
-  "description": "Automates Navattic's capture extension. Describe a click path, or hand over a screen recording, and Claude takes the captures, ready to build into a demo in Navattic.",
+  "description": "Fast Navattic captures from written steps or a screen recording. A decision model (Jev) picks each element, so Claude never has to read the page: a 6-step capture went from 2:27 to 0:45.",
   "plugins": [
     {
       "name": "navattic-capture",
       "source": "./plugins/navattic-capture",
-      "description": "Automates Navattic's capture extension. Describe a click path, or hand over a screen recording, and Claude takes the captures, ready to build into a demo in Navattic."
+      "description": "Fast Navattic captures from written steps or a screen recording. A decision model (Jev) picks each element, so Claude never has to read the page: a 6-step capture went from 2:27 to 0:45."
     }
   ]
 }

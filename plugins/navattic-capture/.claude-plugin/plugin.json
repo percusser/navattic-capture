@@ -1,0 +1,7 @@
+{
+  "name": "navattic-capture",
+  "description": "Capture Navattic interactive demos of a web app by describing the steps (or handing over a screen recording).",
+  "author": {
+    "name": "Tyler Worley"
+  }
+}

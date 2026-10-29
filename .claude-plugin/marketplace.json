@@ -3,12 +3,12 @@
   "owner": {
     "name": "Tyler Worley"
   },
-  "description": "Fast Navattic captures from written steps or a screen recording. A decision model (Jev) finds each element, so a 12-step capture with Claude Haiku takes 1:02 instead of 2:15.",
+  "description": "Navattic captures from written steps or a screen recording, 2x faster with the Jev decision model.",
   "plugins": [
     {
       "name": "navattic-capture",
       "source": "./plugins/navattic-capture",
-      "description": "Fast Navattic captures from written steps or a screen recording. A decision model (Jev) finds each element, so a 12-step capture with Claude Haiku takes 1:02 instead of 2:15."
+      "description": "Navattic captures from written steps or a screen recording, 2x faster with the Jev decision model."
     }
   ]
 }

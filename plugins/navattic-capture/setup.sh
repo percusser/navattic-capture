@@ -62,6 +62,10 @@ EOF
   rm -rf "$ROOT/extension" && mv "$tmp/extension" "$ROOT/extension" && rm -rf "$tmp"
 fi
 
-command -v ffmpeg >/dev/null || echo "Optional: ffmpeg is missing (brew install ffmpeg); only replay.mjs needs it."
+# Claude reads a screen recording as stills, which ffmpeg pulls out.
+if ! command -v ffmpeg >/dev/null; then
+  if command -v brew >/dev/null; then brew install ffmpeg
+  else echo "ffmpeg is missing: install it to capture from screen recordings."; fi
+fi
 node "$CODE/decider.mjs" | tail -1
 echo "Setup done. Start the browser with: bash $CODE/browser.sh --background"

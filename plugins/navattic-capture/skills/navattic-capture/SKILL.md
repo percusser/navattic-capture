@@ -1,6 +1,6 @@
 ---
 name: navattic-capture
-description: Capture interactive Navattic demos of a web app in the shared jev-browser Chromium. Use when asked to capture, record or build a Navattic demo.
+description: Capture interactive Navattic demos of a web app in the shared jev-browser Chromium. Use when asked to capture, record or build a Navattic demo, including from a screen recording.
 ---
 
 # Navattic capture
@@ -13,7 +13,7 @@ Chain a step's commands with `&&` in one Bash call: each exits nonzero with a `F
 
 - `node ${CLAUDE_PLUGIN_ROOT}/jev.mjs tab <url part>`: select the newest tab whose url contains it.
 - `node ${CLAUDE_PLUGIN_ROOT}/jev.mjs shift "<description>"`: the decision model locates the element, then it is Shift+clicked. Prints what was clicked and the confidence.
-- `node ${CLAUDE_PLUGIN_ROOT}/jev.mjs type "<description>" "<text>" [--submit]`: locate a field, Shift+click it (a capture), wait until the capture counter goes up so the capture shows the field empty, then type into it; `--submit` presses Enter. `--no-capture` skips the Shift+click.
+- `node ${CLAUDE_PLUGIN_ROOT}/jev.mjs type "<description>" "<text>" [--submit]`: locate a field, Shift+click it (a capture), wait until the capture counter goes up so the capture shows the field empty, then type into it; `--submit` presses Enter. Every typing step takes its capture, including one followed by an Add or Save click; `--no-capture` (no Shift+click) is only for a field the user says not to capture.
 - `node ${CLAUDE_PLUGIN_ROOT}/jev.mjs capture`: Control+c.
 - `node ${CLAUDE_PLUGIN_ROOT}/jev.mjs settle`: waits until the page stops changing (usually 0.5–1.5 s, at most 4 s).
 - `node ${CLAUDE_PLUGIN_ROOT}/jev.mjs wait <seconds>`: a fixed wait, for the toast timing in step 6.
@@ -43,7 +43,7 @@ Everything else records nothing: the typing itself, plain clicks, reloads, tab s
 ## Steps
 
 1. **Browser.** `curl -fs http://127.0.0.1:9222/json/version`. If it fails, start it: `bash ${CLAUDE_PLUGIN_ROOT}/browser.sh --background`. If that says the extension or Chromium is missing, run `bash ${CLAUDE_PLUGIN_ROOT}/setup.sh` first (one-time: it downloads jev-browser and the Navattic extension into ~/navattic-capture), then tell the user to add a decision-model key to `~/navattic-capture/.env` and log into Navattic in the browser window, and wait.
-2. **Start.** `node ${CLAUDE_PLUGIN_ROOT}/start.mjs <app URL>`. It opens the app, starts Navattic, answers the "Choose a demo" dialog and reloads the tab, ending with the capture bar up at 0. By default it makes a **new demo** named after the app's host and the time. When the user names the demo, add `--new "<name>"`; when they say to add to an existing demo, add `--existing "<name>"`. Its last line is `RESULT {json}`:
+2. **Start.** `node ${CLAUDE_PLUGIN_ROOT}/start.mjs <app URL>`. It opens the app, starts Navattic, answers the "Choose a demo" dialog and waits out Navattic's own reload (reloading again only if the bar stays away), ending with the capture bar up at 0. By default it makes a **new demo** named after the app's host and the time. When the user names the demo, add `--new "<name>"`; when they say to add to an existing demo, add `--existing "<name>"`. Its last line is `RESULT {json}`:
    - `ready` (exit 0): go on.
    - `needs_site_access` / `needs_login` (exit 2): relay the message, wait for the user, rerun.
    - `demo_limit` (exit 2): the Navattic account can't make another demo. Tell the user and ask which existing demo to add to, then rerun with `--existing "<name>"`.

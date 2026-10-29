@@ -12,8 +12,8 @@
 //   node ~/navattic-capture/start.mjs URL --existing "Built LMS"       # add to an existing demo
 //
 // Then it answers Navattic's "Choose a demo" dialog (by default a new demo named after the app's host and
-// the time; Web capture; Click to capture off; Start capturing) and reloads the tab, because the capture bar
-// disappears after "Start capturing" every time. It finishes with the capture bar up at 0.
+// the time; Web capture; Click to capture off; Start capturing), waits for the capture bar to come back from
+// Navattic's own reload, and reloads the tab only if it doesn't. It finishes with the capture bar up at 0.
 //
 // Exit 0 = capture bar ready (or, with --no-setup, button pressed). Exit 2 = Navattic needs you first
 // (login or site access), or the dialog didn't go as expected; the message says what.
@@ -152,13 +152,28 @@ async function chooseDemo(appUrl) {
     if (value(snap, 'Click to capture', 'checkbox') === true) await click(el('Click to capture', 'checkbox')(snap)), snap = await jev.snapshot(NAVATTIC_ONLY);
     await click(await waitFor(el('Start capturing'), 'the "Start capturing" button'));
 
-    await jev.page.waitForTimeout(1500);
-    // A free account allows one demo: "New demo" then shows this and stays on the dialog.
-    const limit = (await jev.snapshot(NAVATTIC_ONLY)).texts.find(t => t.frame > 0 && /demo limit reached/i.test(t.text));
-    if (limit) done('demo_limit', `Navattic says: "${limit.text}" Rerun with --existing "<demo name>" to add to a demo you already have.`, { url: appUrl, demo: DEMO });
-    await jev.page.reload({ waitUntil: 'load' });
-    await waitFor(s => barUp(s) && counter(s) !== undefined, 'the capture bar after the reload', 40_000);
-    done('ready', `Capturing into ${EXISTING ? 'existing' : 'new'} demo "${DEMO}". The capture bar is up on the app tab with ${counter(snap)} captures.`, { url: appUrl, demo: DEMO, count: counter(snap) });
+    // "Start capturing" makes Navattic reload the tab itself (worker.js: location.reload, then chrome.tabs.reload).
+    // Wait for the bar to come back from those; reload ourselves only if it doesn't. It counts as up once it has been
+    // seen twice, 1 s apart, with no page load between (the bar can flash up before Navattic's reloads land).
+    let loads = 0; const onLoad = () => loads++; jev.page.on('load', onLoad);
+    let seen = null, reloaded = false;
+    for (const end = Date.now() + 12_000; Date.now() < end; await jev.page.waitForTimeout(1000)) {
+      snap = await jev.snapshot(NAVATTIC_ONLY);
+      // A free account allows one demo: "New demo" then shows this and stays on the dialog.
+      const limit = snap.texts.find(t => t.frame > 0 && /demo limit reached/i.test(t.text));
+      if (limit) done('demo_limit', `Navattic says: "${limit.text}" Rerun with --existing "<demo name>" to add to a demo you already have.`, { url: appUrl, demo: DEMO });
+      const up = barUp(snap) && counter(snap) !== undefined;
+      if (up && seen === loads) break;
+      seen = up ? loads : null;
+    }
+    jev.page.off('load', onLoad);
+    if (seen !== loads || !(barUp(snap) && counter(snap) !== undefined)) {
+      reloaded = true;
+      await jev.page.reload({ waitUntil: 'load' });
+      await waitFor(s => barUp(s) && counter(s) !== undefined, 'the capture bar after the reload', 40_000);
+    }
+    done('ready', `Capturing into ${EXISTING ? 'existing' : 'new'} demo "${DEMO}". The capture bar is up on the app tab with ${counter(snap)} captures.`,
+      { url: appUrl, demo: DEMO, count: counter(snap), navatticLoads: loads, reloaded });
   } finally {
     await jev.close().catch(() => {});
   }

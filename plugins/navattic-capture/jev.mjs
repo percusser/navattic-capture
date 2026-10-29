@@ -23,7 +23,7 @@
 // Output is one short line per command; a failure prints the jev-browser error.
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveDecider, JEV_VARS, HOME } from './decider.mjs';
 
@@ -75,14 +75,18 @@ function jevTry(...a) {
 }
 
 const call = (cmd, a) => jev(cmd, '--args', JSON.stringify(a));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function locate(description) {
+  if (decider === 'none') fail(`no decision model (DECIDER=none), so nothing can locate "${description}": use find and act on the ref`);
   // A page still re-rendering after the last action gives STALE_TARGET; it settles within a moment, so retry once.
   const ask = () => jevTry('semantic_locate', '--args', JSON.stringify({ description, minConfidence: MIN_CONFIDENCE }), { soft: true });
   let r = ask();
   if (r.error?.code === 'STALE_TARGET') { spawnSync('sleep', ['1']); r = ask(); }
+  // A rate limit or brief outage at the decision model's provider (HTTP 429, 5xx) usually clears in a moment.
+  if (r.error?.code === 'PROVIDER_ERROR' && r.error.retryable) { console.error(`provider: ${r.error.message} Retrying in 2s.`); spawnSync('sleep', ['2']); r = ask(); }
   if (r.error) fail(`semantic_locate: ${r.error.code} ${r.error.message}`);
-  return { ref: r.ref, conf: r.confidence.toFixed(2), what: `${r.evidence?.role ?? ''} "${r.evidence?.text ?? ''}"` };
+  return { ref: r.ref, conf: r.confidence.toFixed(2), role: r.evidence?.role, name: r.evidence?.text, what: `${r.evidence?.role ?? ''} "${r.evidence?.text ?? ''}"` };
 }
 
 function counter(snap) {
@@ -90,6 +94,17 @@ function counter(snap) {
   const i = t.findIndex((x, k) => x.text === 'Capture' && t[k + 1]?.text === 'Finish');
   return i > 0 && /^\d+$/.test(t[i - 1].text) ? Number(t[i - 1].text) : null;
 }
+
+// The captures taken so far this run. Navattic counts a capture a moment after it is taken, so the bar's counter can
+// still be catching up with the last Shift+click; this is what it will read once every capture has landed. `tab` sets
+// it from the bar, each Shift+click and Control+c adds one.
+const TAKEN = join(ROOT, '.jev-captures');
+const taken = () => { try { const n = Number(readFileSync(TAKEN, 'utf8')); return Number.isInteger(n) ? n : null; } catch { return null; } };
+const setTaken = n => writeFileSync(TAKEN, String(n));
+
+// A page's shape for `settle`: url, controls and text count.
+const sig = s => `${s.url}|${s.elements.length}|${s.texts.length}|${s.elements.map(e => e.role + e.name).join(',')}`;
+const BEFORE = join(ROOT, '.jev-before');
 
 const [cmd, ...rest] = process.argv.slice(2);
 switch (cmd) {
@@ -104,12 +119,18 @@ switch (cmd) {
       if (counter(jev("snapshot", ...BAR_ONLY)) != null) { tab = t; break; }
     }
     if (!tab.selected || matches.length > 1) call('tabs', { action: 'select', index: tab.index });
+    const n = counter(jev('snapshot', ...BAR_ONLY));
+    if (n != null) setTaken(n);
     console.log(`tab ${tab.index} ${tab.url}  (decider ${decider})`);
     break;
   }
   case 'shift': case 'click': {
+    // What the page looked like before the click, so `settle` can wait for the click to change it. Taken before the
+    // locate: a snapshot expires the refs of earlier ones.
+    writeFileSync(BEFORE, sig(jev('snapshot')));
     const l = locate(rest.join(' '));
     call('click', { target: l.ref, element: rest.join(' '), ...(cmd === 'shift' && { modifiers: ['Shift'] }) });
+    if (cmd === 'shift' && taken() != null) setTaken(taken() + 1);
     console.log(`${cmd === 'shift' ? 'shift+clicked' : 'clicked'} ${l.what} (confidence ${l.conf})`);
     break;
   }
@@ -117,28 +138,49 @@ switch (cmd) {
     // A typing step is its own demo step: Shift+click the field first (a capture, hotspot on the field), then type.
     const submit = rest.includes('--submit'), quiet = rest.includes('--no-capture');
     const [description, text] = rest.filter(x => x !== '--submit' && x !== '--no-capture');
-    // Read the counter before locating: a snapshot expires the refs of earlier ones.
-    const before = quiet ? undefined : counter(jev('snapshot', ...BAR_ONLY));
+    // Read the counter before locating (a snapshot expires the refs of earlier ones), for when `tab` didn't set TAKEN.
+    const before = quiet ? null : taken() ?? counter(jev('snapshot', ...BAR_ONLY));
     const l = locate(description);
+    let note = '';
     if (!quiet) {
       // Navattic takes its screenshot a moment after the click (the counter moves ~1.4 s later), so typing right away
-      // can land in the capture. Wait until the counter goes up, so the capture shows the empty field.
+      // lands in the capture. Wait until the counter shows this capture too, not just the previous click's, so it
+      // shows the empty field.
       call('click', { target: l.ref, element: description, modifiers: ['Shift'] });
-      for (const end = Date.now() + 5000; before != null && Date.now() < end;) {
-        if (counter(jev('snapshot', ...BAR_ONLY)) !== before) break;
+      if (before != null) {
+        const want = before + 1;
+        let n = null;
+        for (const end = Date.now() + 6000; Date.now() < end;) {
+          n = counter(jev('snapshot', ...BAR_ONLY));
+          if (n != null && n >= want) break;
+        }
+        if (n != null && n >= want) await sleep(250);
+        else note = ` (counter ${n ?? 'not shown'}, expected ${want}: a capture may be missing)`;
+        setTaken(n != null && n < want ? n : want);
       }
     }
-    // The counter snapshots expired l.ref; the Shift+click left the field focused.
-    call('type', { target: quiet ? l.ref : ':focus', element: description, text, ...(submit && { submit: true }) });
-    console.log(`${quiet ? '' : 'shift+clicked and '}typed into ${l.what} (confidence ${l.conf})${submit ? ', pressed Enter' : ''}`);
+    // The counter snapshots expired l.ref, so find the field again by its role and name. Focus is no fallback to wait
+    // on: the Shift+click usually leaves the field focused, but Navattic's capture sometimes takes it (a 30 s timeout).
+    // An unnamed field, or a name two fields share, falls back to the focused element.
+    const targets = quiet ? [l.ref] : [...(l.role && l.name ? [`internal:role=${l.role}[name=${JSON.stringify(l.name)}s]`] : []), ':focus'];
+    let r;
+    for (const target of targets) {
+      r = jevTry('type', '--args', JSON.stringify({ target, element: description, text, ...(submit && { submit: true }) }), '--timeout-ms', '5000', { soft: true });
+      if (!r.error) break;
+    }
+    if (r.error) fail(`type: ${r.error.code} ${r.error.message}`);
+    console.log(`${quiet ? '' : 'shift+clicked and '}typed into ${l.what} (confidence ${l.conf})${submit ? ', pressed Enter' : ''}${note}`);
     break;
   }
   case 'capture':
     call('press_key', { key: 'Control+c' });
+    if (taken() != null) setTaken(taken() + 1);
     console.log('pressed Control+c');
     break;
   case 'bar': {
-    const s = jev('snapshot', ...BAR_ONLY);
+    // The bar drops out for a moment while the page re-renders (right after a Save, say): look again for up to 5 s.
+    let s = jev('snapshot', ...BAR_ONLY);
+    for (const end = Date.now() + 5000; counter(s) == null && Date.now() < end;) { await sleep(500); s = jev('snapshot', ...BAR_ONLY); }
     const finish = s.elements.find(e => e.name === 'Finish' && e.frame > 0);
     console.log(`counter ${counter(s) ?? 'not shown (capture bar missing)'}${finish ? `  finish ${finish.id}` : ''}`);
     break;
@@ -148,7 +190,6 @@ switch (cmd) {
     // captures stay, no demo is built. --build presses "Build demo"; with --copilot "<option>" it first picks that
     // option in Copilot's "Generate demo content for" dropdown, with --no-copilot it turns Copilot off.
     // The counter lags the last capture by a few seconds, so wait until it holds still before pressing Finish.
-    const sleep = ms => new Promise(r => setTimeout(r, ms));
     let s, count, last;
     for (const end = Date.now() + 15_000; ; await sleep(1000)) {
       s = jev('snapshot', ...BAR_ONLY);
@@ -231,17 +272,25 @@ switch (cmd) {
   }
   case 'settle': {
     // Wait until the page stops changing after an action: the same url, controls and text count on
-    // two snapshots in a row (each takes ~0.3 s, which is the spacing), with nothing marked aria-busy. Gives up after
-    // --max seconds (default 4).
+    // two snapshots in a row (each takes ~0.3 s, which is the spacing), with nothing marked aria-busy. A slow page
+    // load leaves the old page standing still for a while, so first wait for the page to differ from how it looked
+    // before the last click (up to 10 s). Gives up after --max seconds (default 4) once it has changed.
     const mi = rest.indexOf('--max'), max = mi >= 0 ? Number(rest[mi + 1]) : 4;
-    const t0 = Date.now(), sig = s => `${s.url}|${s.elements.length}|${s.texts.length}|${s.elements.map(e => e.role + e.name).join(',')}`;
-    let prev, same = 0;
+    let before = null;
+    try { before = readFileSync(BEFORE, 'utf8'); unlinkSync(BEFORE); } catch {}
+    const start = Date.now();
+    let t0 = start, prev, same = 0, changed = before == null;
     for (;;) {
       const snap = jev('snapshot');
       const now = sig(snap);
+      if (!changed) {
+        if (now !== before) { changed = true; t0 = Date.now(); }
+        else if (Date.now() - t0 > 10_000) { console.log('page unchanged 10s after the click, going on'); break; }
+        else continue;
+      }
       same = now === prev && !snap.busy ? same + 1 : 0;
       prev = now;
-      if (same >= 1) { console.log(`settled in ${((Date.now() - t0) / 1000).toFixed(1)}s`); break; }
+      if (same >= 1) { console.log(`settled in ${((Date.now() - start) / 1000).toFixed(1)}s`); break; }
       if (Date.now() - t0 > max * 1000) { console.log(`still changing after ${max}s, going on`); break; }
     }
     break;
